@@ -1,21 +1,24 @@
 const httpProxy = require('express-http-proxy');
 const express = require('express');
 const app = express();
+const dotenv = require('dotenv');
+
+dotenv.config();
 var logger = require('morgan');
 const port = 5000;
 
 app.use(logger('dev'));
 
 function selectProxyHost(req) {
-  if (req.path.startsWith('/usuarios')) return 'http://host.docker.internal:bantads-autenticacao:5001/usuarios';
+  if (req.path.startsWith('/usuarios')) return process.env.HOST_AUTENTICACAO;
   else if (req.path.startsWith('/clientes'))
-    return 'http://host.docker.internal:bantads-cliente:5002/clientes';
+    return process.env.HOST_CLIENTE;
   else if (req.path.startsWith('/analises'))
-    return 'http://host.docker.internal:bantads-cliente:5002/analises';
+    return process.env.HOST_ANALISE;
   else if (req.path.startsWith('/contas'))
-    return 'http://host.docker.internal:bantads-conta:5003/contas';
+    return process.env.HOST_CONTA;
   else if (req.path.startsWith('/gerentes'))
-    return 'http://host.docker.internal:bantads-gerente:5004/gerentes';
+    return process.env.HOST_GERENTE;
 }
 
 app.use((req, res, next) => {
