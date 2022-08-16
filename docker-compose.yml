@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  bantads-gateway:
+    container_name: bantads-gateway
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - 5000:5000
+    networks:
+      - bantads-net
+
+networks:
+  bantads-net:
+    driver: bridge
+    external: true
