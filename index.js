@@ -2,10 +2,11 @@ const httpProxy = require('express-http-proxy');
 const express = require('express');
 const logger = require('morgan');
 const cookieParser = require('cookie-parser');
+const cors = require('cors');
 const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
-const verifyJWT = require('./functions/verifyJWT');
+// const verifyJWT = require('./functions/verifyJWT');
 const helmet = require('helmet');
 const http = require('http');
 
@@ -13,12 +14,13 @@ var PORT = 5000;
 const tokenExpirationMin = 5; // Quantos minutos para o token expirar
 const app = express();
 
-dotenv.config({ path: `${process.env.NODE_ENV !== undefined ? '.env.dev' : '.env'}`});
+dotenv.config({ path: `${process.env.NODE_ENV !== undefined ? '.env.dev' : '.env'}` });
 
 // parse application/x-www-form-urlencoded
 app.use(bodyParser.urlencoded({ extended: false }));
 // parse application/json
 app.use(bodyParser.json());
+app.use(cors());
 
 // Geração do token de login
 const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + '/login', {
@@ -50,7 +52,7 @@ const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + '/login', {
         expiresIn: tokenExpirationMin * 60,
       });
       userRes.status(200);
-      return { auth: true, token: token, data: objBody };
+      return { auth: true, token: token, usuario: objBody };
     } else userRes.status(401);
     return { message: 'Login inválido!' };
   },
@@ -63,7 +65,6 @@ function selectProxyHost(req) {
   else if (req.path.startsWith(process.env.PATH_CONTA)) return httpProxy(process.env.HOST_CONTA);
   else if (req.path.startsWith(process.env.PATH_GERENTE)) return httpProxy(process.env.HOST_GERENTE);
 }
-
 
 // ############################################### ROTAS ###############################################
 
@@ -87,7 +88,6 @@ app.use(cookieParser());
 
 // Cria o servidor na porta
 var server = http.createServer(app);
-// server.listen(3000);
 server.listen(PORT, () => {
   console.log(`API Gateway rodando na porta ${PORT}`);
 });
