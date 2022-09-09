@@ -5,13 +5,13 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
-const jwt = require('jsonwebtoken');
 // const verifyJWT = require('./functions/verifyJWT');
 const helmet = require('helmet');
 const http = require('http');
+const jwt = require('jsonwebtoken');
 
 var PORT = 5000;
-const tokenExpirationMin = 5; // Quantos minutos para o token expirar
+const tokenExpirationMin = 30; // Quantos minutos para o token expirar
 const app = express();
 
 dotenv.config({ path: `${process.env.NODE_ENV !== undefined ? '.env.dev' : '.env'}` });
@@ -24,7 +24,7 @@ app.use(cors());
 
 // Geração do token de login
 const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + '/login', {
-  proxyReqBodyDecorator: function (bodyContent, srcReq) {
+  proxyReqBodyDecorator: function (bodyContent) {
     // Pegar informações do body
     try {
       retBody = {};
@@ -36,13 +36,13 @@ const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + '/login', {
     }
     return bodyContent;
   },
-  proxyReqOptDecorator: function (proxyReqOpts, srcReq) {
+  proxyReqOptDecorator: function (proxyReqOpts) {
     // Alteração do header
     proxyReqOpts.headers['Content-Type'] = 'application/json';
     proxyReqOpts.method = 'POST';
     return proxyReqOpts;
   },
-  userResDecorator: function (proxyRes, proxyResData, userReq, userRes) {
+  userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
     // Processamento do token
     if (proxyRes.statusCode == 200) {
       var str = Buffer.from(proxyResData).toString('utf-8');
@@ -58,23 +58,49 @@ const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + '/login', {
   },
 });
 
-function selectProxyHost(req) {
-  if (req.path.startsWith(process.env.PATH_AUTENTICACAO)) return httpProxy(process.env.HOST_AUTENTICACAO);
-  else if (req.path.startsWith(process.env.PATH_CLIENTE)) return httpProxy(process.env.HOST_CLIENTE);
-  else if (req.path.startsWith(process.env.PATH_ANALISE)) return httpProxy(process.env.HOST_ANALISE);
-  else if (req.path.startsWith(process.env.PATH_CONTA)) return httpProxy(process.env.HOST_CONTA);
-  else if (req.path.startsWith(process.env.PATH_GERENTE)) return httpProxy(process.env.HOST_GERENTE);
+function verifyJWT(req, res, next) {
+  const token = req.headers['x-access-token'];
+  if (!token) return res.status(401).json({ auth: false, message: 'Token não fornecido.' });
+  jwt.verify(token, process.env.SECRET, function (err, decoded) {
+    if (err) return res.status(500).json({ auth: false, message: 'Falha ao autenticar o token.' });
+    // se tudo estiver ok, salva no request para uso posterior
+    req.userId = decoded.id;
+    next();
+  });
+}
+
+function returnHost(req) {
+  if (req.path.startsWith(process.env.PATH_AUTENTICACAO)) return process.env.HOST_AUTENTICACAO;
+  else if (req.path.startsWith(process.env.PATH_CLIENTE)) return process.env.HOST_CLIENTE;
+  else if (req.path.startsWith(process.env.PATH_ANALISE)) return process.env.HOST_ANALISE;
+  else if (req.path.startsWith(process.env.PATH_CONTA)) return process.env.HOST_CONTA;
+  else if (req.path.startsWith(process.env.PATH_GERENTE)) return process.env.HOST_GERENTE;
 }
 
 // ############################################### ROTAS ###############################################
 
 // ############ Autenticação
-app.post(process.env.PATH_AUTENTICACAO + '/login', (req, res, next) => {
+app.post(process.env.PATH_AUTENTICACAO + '/login', async (req, res, next) => {
   authServiceProxy(req, res, next);
 });
 
-app.get(process.env.PATH_AUTENTICACAO + '/logout', (req, res) => {
+app.get(process.env.PATH_AUTENTICACAO + '/logout', (_req, res) => {
   res.json({ auth: false, token: null });
+});
+
+// ############ Perfil de Admin
+app.post(process.env.PATH_GERENTE, verifyJWT, (req, res, next) => {
+  httpProxy(process.env.HOST_ORQUESTRADOR, {
+    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 201) {
+        userRes.status(201);
+        return { message: 'Gerente criado com sucesso.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao cadastrar gerente.' };
+      }
+    },
+  })(req, res, next);
 });
 
 // #####################################################################################################
