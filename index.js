@@ -9,6 +9,7 @@ const bodyParser = require('body-parser');
 const helmet = require('helmet');
 const http = require('http');
 const jwt = require('jsonwebtoken');
+const axios = require('axios').default;
 
 var PORT = 5000;
 const tokenExpirationMin = 30; // Quantos minutos para o token expirar
@@ -23,7 +24,7 @@ app.use(bodyParser.json());
 app.use(cors());
 
 // Geração do token de login
-const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + '/login', {
+const authServiceProxy = httpProxy(process.env.HOST_AUTENTICACAO + process.env.PATH_AUTENTICACAO + '/login', {
   proxyReqBodyDecorator: function (bodyContent) {
     // Pegar informações do body
     try {
@@ -103,6 +104,41 @@ app.post(process.env.PATH_GERENTE, verifyJWT, (req, res, next) => {
   })(req, res, next);
 });
 
+// app.get(process.env.PATH_GERENTE + '/:id', verifyJWT, (req, res, next) => {
+//   httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
+//     userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+//       if (proxyRes.statusCode == 201) {
+//         userRes.status(201);
+//         return { message: 'Gerente criado com sucesso.' };
+//       } else {
+//         userRes.status(proxyRes.statusCode);
+//         return { message: 'Um erro ocorreu ao cadastrar gerente.' };
+//       }
+//     },
+//   })(req, res, next);
+// });
+
+app.get(process.env.PATH_GERENTE + process.env.PATH_CONTA, async (_req, res) => {
+  try {
+    const gerentesContaResponse = await axios
+      .get(process.env.HOST_CONTA + process.env.PATH_GERENTE + process.env.PATH_CONTA)
+      .then((response) => response)
+      .catch((e) => e);
+
+    if (gerentesContaResponse?.status == 200) {
+      const gerentesConta = gerentesContaResponse?.data ?? [];
+      if (gerentesConta.length == 0) {
+        return res.status(200).json(gerentesConta);
+      } else {
+        const gerentes = await getGerentesByIdGerente(gerentesConta);
+        return res.status(200).json(gerentes);
+      }
+    }
+  } catch (e) {
+    return res.status(400).json({ message: 'Um erro ocorreu ao buscar gerentes.' });
+  }
+});
+
 // #####################################################################################################
 
 // Configurações do app
@@ -117,3 +153,29 @@ var server = http.createServer(app);
 server.listen(PORT, () => {
   console.log(`API Gateway rodando na porta ${PORT}`);
 });
+
+async function getGerentesByIdGerente(gerentesConta) {
+  const gerentes = [];
+  const promises = gerentesConta.map(async (gerente) => {
+    const response = await axios
+      .get(process.env.HOST_GERENTE + process.env.PATH_GERENTE + `/${gerente.idExternoGerente}`)
+      .then((response) => response.data)
+      .catch((e) => e);
+    gerentes.push({ ...gerente, ...response }); // Retorna objeto mesclado
+  });
+
+  await Promise.all(promises);
+
+  const promises2 = gerentes.map(async (gerente) => {
+    const response = await axios
+      .get(process.env.HOST_AUTENTICACAO + process.env.PATH_AUTENTICACAO + `/${gerente.idExternoUsuario}`)
+      .then((response) => response.data)
+      .catch((e) => e);
+
+    gerente.usuario = response;
+  });
+
+  await Promise.all(promises2);
+
+  return gerentes;
+}
