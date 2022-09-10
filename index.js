@@ -97,6 +97,7 @@ app.post(process.env.PATH_CLIENTE, async (req, res, next) => {
 });
 
 // ############ Perfil de Admin
+// # Criar novo gerente
 app.post(process.env.PATH_GERENTE, verifyJWT, async (req, res, next) => {
   const cpfExists = await cpfExistsGerente(req.body);
   if (!cpfExists) {
@@ -117,6 +118,7 @@ app.post(process.env.PATH_GERENTE, verifyJWT, async (req, res, next) => {
 });
 
 // Observar que rotas mais específicas devem vir primeiro, se não pega a mais fácil
+// # Listar gerentes: 1 gerente conta 2 pega Gerente por id de gerente 3 pega Usuario por id de usuario
 app.get(`${process.env.PATH_GERENTE}${process.env.PATH_CONTA}`, verifyJWT, async (_req, res) => {
   try {
     const gerentesContaResponse = await axios
@@ -138,6 +140,7 @@ app.get(`${process.env.PATH_GERENTE}${process.env.PATH_CONTA}`, verifyJWT, async
   }
 });
 
+// # Buscar gerente por id
 app.get(`${process.env.PATH_GERENTE}/:id`, verifyJWT, (req, res, next) => {
   httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
     userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
@@ -153,6 +156,7 @@ app.get(`${process.env.PATH_GERENTE}/:id`, verifyJWT, (req, res, next) => {
   })(req, res, next);
 });
 
+// # Alterar gerente pelo id
 app.put(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => {
   const cpfExists = await cpfExistsGerente(req.body);
   if (!cpfExists) {
@@ -173,6 +177,7 @@ app.put(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => 
   }
 });
 
+// # Deletar o gerente por id
 app.delete(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => {
   httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
     userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
@@ -182,6 +187,39 @@ app.delete(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) 
       } else {
         userRes.status(proxyRes.statusCode);
         return { message: 'Um erro ocorreu ao alterar o gerente.' };
+      }
+    },
+  })(req, res, next);
+});
+
+// ############ Perfil de Gerente
+// # Listar pedidos de autocadastro pendentes pelo id de gerente
+app.get(`${process.env.PATH_ANALISE}/por-gerente/:idexternogerente`, verifyJWT, (req, res, next) => {
+  httpProxy(process.env.HOST_CLIENTE + `/por-gerente/${req.query.idexternogerente}`, {
+    userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        var lista = Buffer.from(proxyResData).toString('utf-8');
+        userRes.status(200);
+        return lista;
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao buscar os clientes.' };
+      }
+    },
+  })(req, res, next);
+});
+
+// # Buscar Gerente pelo id de Usuario
+app.get(`${process.env.PATH_GERENTE}/por-usuario/:idexternousuario`, verifyJWT, (req, res, next) => {
+  httpProxy(process.env.HOST_GERENTE + `/por-usuario/${req.query.idexternousuario}`, {
+    userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        var gerente = Buffer.from(proxyResData).toString('utf-8');
+        userRes.status(200);
+        return gerente;
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao buscar o gerente.' };
       }
     },
   })(req, res, next);
