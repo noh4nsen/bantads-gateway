@@ -12,7 +12,7 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios').default;
 
 var PORT = 5000;
-const tokenExpirationMin = 1; // Quantos minutos para o token expirar
+const tokenExpirationMin = 30; // Quantos minutos para o token expirar
 const app = express();
 
 dotenv.config({ path: `${process.env.NODE_ENV !== undefined ? '.env.dev' : '.env'}` });
@@ -70,14 +70,6 @@ function verifyJWT(req, res, next) {
   });
 }
 
-function returnHost(req) {
-  if (req.path.startsWith(process.env.PATH_AUTENTICACAO)) return process.env.HOST_AUTENTICACAO;
-  else if (req.path.startsWith(process.env.PATH_CLIENTE)) return process.env.HOST_CLIENTE;
-  else if (req.path.startsWith(process.env.PATH_ANALISE)) return process.env.HOST_ANALISE;
-  else if (req.path.startsWith(process.env.PATH_CONTA)) return process.env.HOST_CONTA;
-  else if (req.path.startsWith(process.env.PATH_GERENTE)) return process.env.HOST_GERENTE;
-}
-
 // ############################################### ROTAS ###############################################
 
 // ############ Autenticação
@@ -87,6 +79,21 @@ app.post(process.env.PATH_AUTENTICACAO + '/login', async (req, res, next) => {
 
 app.get(process.env.PATH_AUTENTICACAO + '/logout', (_req, res) => {
   res.json({ auth: false, token: null });
+});
+
+// ############ Autocadastro
+app.post(process.env.PATH_CLIENTE, async (req, res, next) => {
+  httpProxy(process.env.HOST_ORQUESTRADOR, {
+    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 201) {
+        userRes.status(201);
+        return { message: 'Cadastro realizado com sucesso. Consulte seu e-mail para próximos passos.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu em seu autocadastro. Tente novamente.' };
+      }
+    },
+  })(req, res, next);
 });
 
 // ############ Perfil de Admin
