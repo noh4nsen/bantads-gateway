@@ -12,7 +12,7 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios').default;
 
 var PORT = 5000;
-const tokenExpirationMin = 30; // Quantos minutos para o token expirar
+const tokenExpirationMin = 1; // Quantos minutos para o token expirar
 const app = express();
 
 dotenv.config({ path: `${process.env.NODE_ENV !== undefined ? '.env.dev' : '.env'}` });
@@ -63,7 +63,7 @@ function verifyJWT(req, res, next) {
   const token = req.headers['x-access-token'];
   if (!token) return res.status(401).json({ auth: false, message: 'Token não fornecido.' });
   jwt.verify(token, process.env.SECRET, function (err, decoded) {
-    if (err) return res.status(500).json({ auth: false, message: 'Falha ao autenticar o token.' });
+    if (err) return res.status(401).json({ auth: false, message: 'Falha ao autenticar o token.' });
     // se tudo estiver ok, salva no request para uso posterior
     req.userId = decoded.id;
     next();
@@ -90,35 +90,27 @@ app.get(process.env.PATH_AUTENTICACAO + '/logout', (_req, res) => {
 });
 
 // ############ Perfil de Admin
-app.post(process.env.PATH_GERENTE, verifyJWT, (req, res, next) => {
-  httpProxy(process.env.HOST_ORQUESTRADOR, {
-    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
-      if (proxyRes.statusCode == 201) {
-        userRes.status(201);
-        return { message: 'Gerente criado com sucesso.' };
-      } else {
-        userRes.status(proxyRes.statusCode);
-        return { message: 'Um erro ocorreu ao cadastrar gerente.' };
-      }
-    },
-  })(req, res, next);
+app.post(process.env.PATH_GERENTE, verifyJWT, async (req, res, next) => {
+  const cpfExists = await cpfExistsGerente(req.body);
+  if (!cpfExists) {
+    httpProxy(process.env.HOST_ORQUESTRADOR, {
+      userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+        if (proxyRes.statusCode == 201) {
+          userRes.status(201);
+          return { message: 'Gerente criado com sucesso.' };
+        } else {
+          userRes.status(proxyRes.statusCode);
+          return { message: 'Um erro ocorreu ao cadastrar gerente.' };
+        }
+      },
+    })(req, res, next);
+  } else {
+    return res.status(409).json({ message: 'CPF já cadastrado para outro gerente.' });
+  }
 });
 
-// app.get(process.env.PATH_GERENTE + '/:id', verifyJWT, (req, res, next) => {
-//   httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
-//     userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
-//       if (proxyRes.statusCode == 201) {
-//         userRes.status(201);
-//         return { message: 'Gerente criado com sucesso.' };
-//       } else {
-//         userRes.status(proxyRes.statusCode);
-//         return { message: 'Um erro ocorreu ao cadastrar gerente.' };
-//       }
-//     },
-//   })(req, res, next);
-// });
-
-app.get(process.env.PATH_GERENTE + process.env.PATH_CONTA, async (_req, res) => {
+// Observar que rotas mais específicas devem vir primeiro, se não pega a mais fácil
+app.get(`${process.env.PATH_GERENTE}${process.env.PATH_CONTA}`, verifyJWT, async (_req, res) => {
   try {
     const gerentesContaResponse = await axios
       .get(process.env.HOST_CONTA + process.env.PATH_GERENTE + process.env.PATH_CONTA)
@@ -137,6 +129,55 @@ app.get(process.env.PATH_GERENTE + process.env.PATH_CONTA, async (_req, res) => 
   } catch (e) {
     return res.status(400).json({ message: 'Um erro ocorreu ao buscar gerentes.' });
   }
+});
+
+app.get(`${process.env.PATH_GERENTE}/:id`, verifyJWT, (req, res, next) => {
+  httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
+    userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        var str = Buffer.from(proxyResData).toString('utf-8');
+        userRes.status(200);
+        return str;
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao buscar o gerente.' };
+      }
+    },
+  })(req, res, next);
+});
+
+app.put(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => {
+  const cpfExists = await cpfExistsGerente(req.body);
+  if (!cpfExists) {
+    httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
+      userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
+        if (proxyRes.statusCode == 200) {
+          var str = Buffer.from(proxyResData).toString('utf-8');
+          userRes.status(200);
+          return str;
+        } else {
+          userRes.status(proxyRes.statusCode);
+          return { message: 'Um erro ocorreu ao alterar o gerente.' };
+        }
+      },
+    })(req, res, next);
+  } else {
+    return res.status(409).json({ message: 'CPF já cadastrado para outro gerente.' });
+  }
+});
+
+app.delete(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => {
+  httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
+    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        userRes.status(200);
+        return { message: 'Gerente excluído com sucesso.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao alterar o gerente.' };
+      }
+    },
+  })(req, res, next);
 });
 
 // #####################################################################################################
@@ -158,7 +199,7 @@ async function getGerentesByIdGerente(gerentesConta) {
   const gerentes = [];
   const promises = gerentesConta.map(async (gerente) => {
     const response = await axios
-      .get(process.env.HOST_GERENTE + process.env.PATH_GERENTE + `/${gerente.idExternoGerente}`)
+      .get(`${process.env.HOST_GERENTE}${process.env.PATH_GERENTE}/${gerente.idExternoGerente}`)
       .then((response) => response.data)
       .catch((e) => e);
     gerentes.push({ ...gerente, ...response }); // Retorna objeto mesclado
@@ -168,7 +209,7 @@ async function getGerentesByIdGerente(gerentesConta) {
 
   const promises2 = gerentes.map(async (gerente) => {
     const response = await axios
-      .get(process.env.HOST_AUTENTICACAO + process.env.PATH_AUTENTICACAO + `/${gerente.idExternoUsuario}`)
+      .get(`${process.env.HOST_AUTENTICACAO}${process.env.PATH_AUTENTICACAO}/${gerente.idExternoUsuario}`)
       .then((response) => response.data)
       .catch((e) => e);
 
@@ -178,4 +219,16 @@ async function getGerentesByIdGerente(gerentesConta) {
   await Promise.all(promises2);
 
   return gerentes;
+}
+
+async function cpfExistsGerente(gerente) {
+  let response = await axios
+    .get(`${process.env.HOST_GERENTE}${process.env.PATH_GERENTE}/por-cpf/${gerente.cpf.toString()}`)
+    .then((response) => response.data)
+    .catch(() => null);
+
+  if (!!response && !!gerente.id) {
+    return gerente.id != response.id;
+  }
+  return !!response;
 }
