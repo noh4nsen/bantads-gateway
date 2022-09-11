@@ -225,6 +225,36 @@ app.get(`${process.env.PATH_GERENTE}/por-usuario/:idexternousuario`, verifyJWT, 
   })(req, res, next);
 });
 
+// # Aprovar cliente
+app.put(`${process.env.PATH_ANALISE}/aprovar/:id`, verifyJWT, async (req, res, next) => {
+  httpProxy(`${process.env.HOST_CLIENTE}${process.env.PATH_ANALISE}/aprovar/${req.query.id}`, {
+    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        userRes.status(200);
+        return { message: 'Cliente aprovado com sucesso.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu. Não foi possível aprovar o cliente no momento.' };
+      }
+    },
+  })(req, res, next);
+});
+
+// # Reprovar cliente
+app.put(`${process.env.PATH_ANALISE}/reprovar/:id`, verifyJWT, async (req, res, next) => {
+  httpProxy(`${process.env.HOST_CLIENTE}${process.env.PATH_ANALISE}/reprovar/${req.query.id}`, {
+    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        userRes.status(200);
+        return { message: 'Cliente reprovado com sucesso. O motivo foi enviado ao cliente.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu. Não foi possível reprovar o cliente no momento.' };
+      }
+    },
+  })(req, res, next);
+});
+
 // #####################################################################################################
 
 // Configurações do app
