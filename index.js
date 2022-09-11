@@ -242,7 +242,18 @@ app.put(`${process.env.PATH_ANALISE}/aprovar/:id`, verifyJWT, async (req, res, n
 
 // # Reprovar cliente
 app.put(`${process.env.PATH_ANALISE}/reprovar/:id`, verifyJWT, async (req, res, next) => {
-  httpProxy(`${process.env.HOST_CLIENTE}${process.env.PATH_ANALISE}/reprovar/${req.query.id}`, {
+  httpProxy(`${process.env.HOST_CLIENTE}${process.env.PATH_ANALISE}/reprovar/${req.params.id}`, {
+    proxyReqBodyDecorator: function (bodyContent) {
+      // Pegar informações do body
+      try {
+        retBody = {};
+        retBody.motivo = bodyContent.motivo;
+        bodyContent = retBody;
+      } catch (e) {
+        console.log(' - ERRO: ' + e);
+      }
+      return bodyContent;
+    },
     userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
       if (proxyRes.statusCode == 200) {
         userRes.status(200);
@@ -253,6 +264,16 @@ app.put(`${process.env.PATH_ANALISE}/reprovar/:id`, verifyJWT, async (req, res, 
       }
     },
   })(req, res, next);
+});
+
+// # Buscar Clientes por id de gerente
+app.get(`${process.env.PATH_CONTA}/por-gerente/:idexternogerente`, verifyJWT, async (req, res, next) => {
+  try {
+    const clientes = await getClientesPorGerente(req.params.idexternogerente);
+    res.status(200).json(clientes);
+  } catch (e) {
+    return res.status(400).json({ message: 'Um erro ocorreu ao buscar clientes.' });
+  }
 });
 
 // #####################################################################################################
@@ -294,6 +315,46 @@ async function getGerentesByIdGerente(gerentesConta) {
   await Promise.all(promises2);
 
   return gerentes;
+}
+
+async function getClientesPorGerente(idGerente) {
+  // Pega a lista de Contas pelo id de Gerente
+  const contas = await axios
+    .get(`${process.env.HOST_CONTA}${process.env.PATH_CONTA}/por-gerente/${idGerente}`)
+    .then((response) => {
+      return response.data;
+    })
+    .catch((e) => console.log(e));
+
+  if (contas.length == 0) {
+    return contas;
+  }
+
+  // Busca Cliente de cada conta pelo idExternoCliente
+  const clientes = [];
+  const promises = contas.map(async (conta) => {
+    const response = await axios
+      .get(`${process.env.HOST_CLIENTE}${process.env.PATH_CLIENTE}/${conta.idExternoCliente}`)
+      .then((response) => response.data)
+      .catch((e) => e);
+    response.conta = conta;
+    clientes.push(response);
+  });
+
+  await Promise.all(promises);
+
+  // Busca Usuario de cada cliente pelo idExternoUsuario
+  const promises2 = clientes.map(async (cliente) => {
+    const response = await axios
+      .get(`${process.env.HOST_AUTENTICACAO}${process.env.PATH_AUTENTICACAO}/${cliente.idExternoUsuario}`)
+      .then((response) => response.data)
+      .catch((e) => e);
+    cliente.usuario = response;
+  });
+
+  await Promise.all(promises2);
+
+  return clientes;
 }
 
 async function cpfExistsGerente(gerente) {
