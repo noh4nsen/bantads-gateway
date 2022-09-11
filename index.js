@@ -186,7 +186,7 @@ app.delete(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) 
         return { message: 'Gerente excluído com sucesso.' };
       } else {
         userRes.status(proxyRes.statusCode);
-        return { message: 'Um erro ocorreu ao alterar o gerente.' };
+        return { message: 'Um erro ocorreu ao excluir o gerente.' };
       }
     },
   })(req, res, next);
@@ -274,6 +274,29 @@ app.get(`${process.env.PATH_CONTA}/por-gerente/:idexternogerente`, verifyJWT, as
   } catch (e) {
     return res.status(400).json({ message: 'Um erro ocorreu ao buscar clientes.' });
   }
+});
+
+// # Buscar Cliente por CPF
+app.get(`${process.env.PATH_CLIENTE}/por-cpf/:cpf`, verifyJWT, async (req, res, next) => {
+  httpProxy(`${process.env.HOST_CLIENTE}${process.env.PATH_CLIENTE}/por-cpf/${req.params.cpf}`, {
+    userResDecorator: async function (proxyRes, proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        const cliente = Buffer.from(proxyResData).toString('utf-8');
+        let clienteJson = JSON.parse(cliente);
+        // Busca informações de Cliente (conta e usuario)
+        clienteJson = await buscarInformacoesCliente(clienteJson, userRes);
+
+        if (userRes.statusCode == 400) {
+          return { message: 'Erro ao buscar informações para o cliente. Tente novamente.' };
+        }
+
+        return JSON.stringify(clienteJson);
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Não foi encontrado nenhum cliente para esse CPF.' };
+      }
+    },
+  })(req, res, next);
 });
 
 // #####################################################################################################
@@ -367,4 +390,33 @@ async function cpfExistsGerente(gerente) {
     return gerente.id != response.id;
   }
   return !!response;
+}
+
+async function buscarInformacoesCliente(cliente, userRes) {
+  // Busca conta pelo id de Cliente
+  const conta = await axios
+    .get(`${process.env.HOST_CONTA}${process.env.PATH_CONTA}/obter-idcliente/${cliente.id}`) // TODO VER SE VAI MUDAR ESSE PATH
+    .then((response) => response.data)
+    .catch((e) => {
+      console.log(e);
+      userRes.status(400);
+    });
+
+  if (userRes.statusCode == 400) {
+    return;
+  }
+  cliente.conta = conta;
+
+  // Buscar Usuario pelo idExternoUsuario
+  const usuario = await axios
+    .get(`${process.env.HOST_AUTENTICACAO}${process.env.PATH_AUTENTICACAO}/${cliente.idExternoUsuario}`)
+    .then((response) => {
+      userRes.status(200);
+      return response.data;
+    })
+    .catch(() => userRes.status(400));
+
+  cliente.usuario = usuario;
+
+  return cliente;
 }
