@@ -179,7 +179,7 @@ app.put(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => 
 
 // # Deletar o gerente por id
 app.delete(`${process.env.PATH_GERENTE}/:id`, verifyJWT, async (req, res, next) => {
-  httpProxy(process.env.HOST_GERENTE + `/${req.query.id}`, {
+  httpProxy(`${process.env.HOST_ORQUESTRADOR}${process.env.PATH_GERENTE}/${req.query.id}`, {
     userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
       if (proxyRes.statusCode == 200) {
         userRes.status(200);
@@ -294,6 +294,72 @@ app.get(`${process.env.PATH_CLIENTE}/por-cpf/:cpf`, verifyJWT, async (req, res, 
       } else {
         userRes.status(proxyRes.statusCode);
         return { message: 'Não foi encontrado nenhum cliente para esse CPF.' };
+      }
+    },
+  })(req, res, next);
+});
+
+// ############ Perfil de Cliente
+// # Buscar Cliente pelo id de Usuario
+app.get(`${process.env.PATH_CLIENTE}/por-usuario/:idexternousuario`, verifyJWT, (req, res, next) => {
+  httpProxy(process.env.HOST_CLIENTE + `/por-usuario/${req.query.idexternousuario}`, {
+    userResDecorator: async function (proxyRes, proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        var cliente = Buffer.from(proxyResData).toString('utf-8');
+        let clienteJson = JSON.parse(cliente);
+        // Busca informações de Cliente (conta e usuario)
+        clienteJson = await buscarInformacoesCliente(clienteJson, userRes);
+
+        if (userRes.statusCode == 400) {
+          return { message: 'Erro ao buscar informações para o cliente. Tente novamente.' };
+        }
+
+        const gerente = await buscarGerentePorIdExternoGerente(clienteJson.conta.idExternoGerente, userRes);
+        if (userRes.statusCode == 400) {
+          return { message: 'Erro ao buscar informações para o cliente. Tente novamente.' };
+        } else {
+          clienteJson.conta.gerente = gerente;
+        }
+
+        return JSON.stringify(clienteJson);
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao buscar o cliente.' };
+      }
+    },
+  })(req, res, next);
+});
+
+// # Realizar movimentação de conta
+app.post(process.env.PATH_MOVIMENTACAO, verifyJWT, async (req, res, next) => {
+  httpProxy(process.env.HOST_CONTA + process.env.PATH_MOVIMENTACAO, {
+    userResDecorator: function (proxyRes, _proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        // TODO ver o que retorna e qual o status
+        userRes.status(201);
+        return { message: 'Operação realizada com sucesso.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Um erro ocorreu ao realizar a operação.' };
+      }
+    },
+  })(req, res, next);
+});
+
+// # Buscar movimentações por data inicial e final
+app.get(`${process.env.PATH_MOVIMENTACAO}/obter-data/:id/:dataInicial/:dataFinal`, verifyJWT, (req, res, next) => {
+  httpProxy(`${process.env.HOST_GERENTE}/obter-data/${req.params.id}/${req.params.dataFinal}`, {
+    userResDecorator: function (proxyRes, proxyResData, _userReq, userRes) {
+      if (proxyRes.statusCode == 200) {
+        var movimentacoes = Buffer.from(proxyResData).toString('utf-8');
+        userRes.status(200);
+        return movimentacoes;
+      } else if (proxyRes.statusCode == 404) {
+        userRes.status(404);
+        return { message: 'Não existem movimentações para esse período.' };
+      } else {
+        userRes.status(proxyRes.statusCode);
+        return { message: 'Erro ao buscar as movimentações.' };
       }
     },
   })(req, res, next);
@@ -419,4 +485,16 @@ async function buscarInformacoesCliente(cliente, userRes) {
   cliente.usuario = usuario;
 
   return cliente;
+}
+
+async function buscarGerentePorIdExternoGerente(idExternoGerente, userRes) {
+  let gerente = await axios
+    .get(`${process.env.HOST_GERENTE}${process.env.PATH_GERENTE}/${idExternoGerente}`)
+    .then((response) => {
+      userRes.status(200);
+      return response.data;
+    })
+    .catch(() => userRes.status(400));
+
+  return gerente;
 }
